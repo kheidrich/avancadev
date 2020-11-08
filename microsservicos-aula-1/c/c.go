@@ -2,9 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 type Coupon struct {
@@ -26,6 +31,10 @@ func (c Coupons) Check(code string) string {
 
 type Result struct {
 	Status string
+}
+
+type MicroserviceResponse struct {
+	Message string
 }
 
 var coupons Coupons
@@ -52,6 +61,34 @@ func home(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("Error converting json")
 	}
 
-	fmt.Fprintf(w, string(jsonResult))
+	response, err := callMicroserviceD()
+	if err != nil {
+		log.Fatal("Servidor fora do ar!")
+	}
 
+	log.Println(response.Message)
+	fmt.Fprintf(w, string(jsonResult))
+}
+
+func callMicroserviceD() (MicroserviceResponse, error) {
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 5
+
+	res, err := retryClient.PostForm("http://localhost:9093", url.Values{})
+	if err != nil {
+		return MicroserviceResponse{}, errors.New("Servidor fora do ar!")
+	}
+
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal("Error processing result")
+	}
+
+	data := MicroserviceResponse{}
+
+	json.Unmarshal(body, &data)
+
+	return data, nil
 }
